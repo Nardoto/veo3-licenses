@@ -507,7 +507,7 @@
         };
 
         // Senha de acesso (MUDE ESTA SENHA!)
-        const ADMIN_PASSWORD = 'veo3@nardoto';
+        const ADMIN_PASSWORD = 'nardoto2024';
 
         // Dados globais
         let allLicenses = [];
@@ -624,6 +624,7 @@
                     fields: {
                         licenseKey: { stringValue: key },
                         username: { stringValue: username },
+                        password: { stringValue: password }, // AGORA SALVA A SENHA!
                         name: { stringValue: name },
                         email: { stringValue: email },
                         plan: { stringValue: packageName },
@@ -704,13 +705,15 @@
                     return {
                         licenseKey: fields.licenseKey?.stringValue || '',
                         username: fields.username?.stringValue || '',
+                        password: fields.password?.stringValue || 'Não disponível', // AGORA MOSTRA SENHA!
                         name: fields.name?.stringValue || '',
                         email: fields.email?.stringValue || '',
                         plan: fields.plan?.stringValue || '',
                         status: fields.status?.stringValue || 'active',
                         deviceFingerprint: fields.deviceFingerprint?.stringValue || '',
                         createdAt: fields.createdAt?.timestampValue || new Date().toISOString(),
-                        expiresAt: parseInt(fields.expiresAt?.integerValue || 0)
+                        expiresAt: parseInt(fields.expiresAt?.integerValue || 0),
+                        documentPath: doc.name // Salva o caminho para poder deletar
                     };
                 });
 
@@ -734,7 +737,7 @@
                 return;
             }
 
-            list.innerHTML = allLicenses.map(license => {
+            list.innerHTML = allLicenses.map((license, index) => {
                 const isActivated = license.deviceFingerprint && license.deviceFingerprint.length > 10;
                 const activatedText = isActivated ? '🟢 Ativada' : '⚪ Não Ativada';
 
@@ -747,8 +750,13 @@
                     <div class="license-item-details">
                         <strong>${license.name}</strong> • ${license.email}<br>
                         ${license.plan} • Usuário: ${license.username}<br>
+                        Senha: <span style="filter: blur(5px);" id="pwd-${index}">${license.password}</span>
+                        <button onclick="togglePassword(${index})" style="margin-left: 10px; padding: 2px 8px; background: rgba(59, 130, 246, 0.2); border: 1px solid rgba(59, 130, 246, 0.3); border-radius: 4px; color: #60a5fa; cursor: pointer;">👁️ Ver</button><br>
                         Criada em: ${new Date(license.createdAt).toLocaleDateString('pt-BR')} às ${new Date(license.createdAt).toLocaleTimeString('pt-BR')}
                         ${isActivated ? '<br><small>🔒 Vinculada ao fingerprint: ' + license.deviceFingerprint.substring(0, 16) + '...</small>' : ''}
+                        <br>
+                        <button onclick="copyLicenseCredentials(${index})" style="margin-top: 10px; margin-right: 10px; padding: 6px 12px; background: rgba(16, 185, 129, 0.2); border: 1px solid rgba(16, 185, 129, 0.3); border-radius: 6px; color: #10b981; cursor: pointer;">📋 Copiar Credenciais</button>
+                        <button onclick="revokeLicense(${index})" style="margin-top: 10px; padding: 6px 12px; background: rgba(239, 68, 68, 0.2); border: 1px solid rgba(239, 68, 68, 0.3); border-radius: 6px; color: #ef4444; cursor: pointer;">🗑️ Revogar Licença</button>
                     </div>
                 </div>
             `;
@@ -809,6 +817,93 @@ https://nardoto.com.br`;
                 alert('✅ Credenciais copiadas! Cole no WhatsApp do cliente.');
             });
         }
+
+        // Função para mostrar/ocultar senha
+        function togglePassword(index) {
+            const pwdElement = document.getElementById(`pwd-${index}`);
+            if (pwdElement.style.filter === 'blur(5px)') {
+                pwdElement.style.filter = 'none';
+            } else {
+                pwdElement.style.filter = 'blur(5px)';
+            }
+        }
+
+        // Função para copiar credenciais de uma licença específica
+        function copyLicenseCredentials(index) {
+            const license = allLicenses[index];
+
+            const text = `🎉 Seu acesso ao VEO3 Automator está pronto!
+
+👤 Usuário: ${license.username}
+🔑 Senha: ${license.password}
+🎫 Chave de Licença: ${license.licenseKey}
+📦 Pacote: ${license.plan}
+
+⚙️ COMO INSTALAR:
+1. Extraia a pasta da extensão
+2. Abra Chrome → chrome://extensions
+3. Ative "Modo do desenvolvedor"
+4. Clique em "Carregar sem compactação"
+5. Selecione a pasta extraída
+
+🚀 COMO ATIVAR:
+1. Abra https://labs.google/fx/tools/flow/
+2. Uma janela de ativação abrirá automaticamente
+3. Cole suas credenciais acima
+4. Após ativar, recarregue a página (F5)
+
+✅ Pronto! O botão VEO3 aparecerá no canto superior direito.
+
+Suporte: (27) 99913-2594
+https://nardoto.com.br`;
+
+            navigator.clipboard.writeText(text).then(() => {
+                alert('✅ Credenciais copiadas! Cole no WhatsApp do cliente.');
+            });
+        }
+
+        // Função para revogar licença
+        async function revokeLicense(index) {
+            const license = allLicenses[index];
+
+            if (!confirm(`⚠️ Tem certeza que deseja REVOGAR a licença:\n\n${license.licenseKey}\n${license.name} - ${license.email}\n\nO cliente perderá acesso IMEDIATAMENTE!`)) {
+                return;
+            }
+
+            try {
+                // Deleta no Firebase
+                const url = `${FIREBASE_CONFIG.databaseURL}/licenses/${license.licenseKey}?key=${FIREBASE_CONFIG.apiKey}`;
+
+                const response = await fetch(url, {
+                    method: 'DELETE',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    }
+                });
+
+                if (response.ok || response.status === 404) {
+                    alert('✅ Licença revogada com sucesso!');
+
+                    // Remove da lista local
+                    allLicenses.splice(index, 1);
+
+                    // Atualiza interface
+                    updateLicenseList();
+                    updateStats();
+                } else {
+                    throw new Error('Erro ao revogar licença');
+                }
+
+            } catch (error) {
+                console.error('❌ Erro ao revogar:', error);
+                alert('❌ Erro ao revogar licença. Tente pelo Firebase Console.');
+            }
+        }
+
+        // Torna funções globais
+        window.togglePassword = togglePassword;
+        window.copyLicenseCredentials = copyLicenseCredentials;
+        window.revokeLicense = revokeLicense;
 
         console.log('🔥 Gerador Online carregado!');
     </script>
